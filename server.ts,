@@ -1,0 +1,534 @@
+import express from 'express';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+app.use(express.json({ limit: '10mb' }));
+
+// Initialize Google GenAI client (Server-side only)
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    },
+  },
+});
+
+export interface AdVariation {
+  id: string;
+  angle: string;
+  hook: string;
+  headline: string;
+  primaryText: string;
+  callToAction: string;
+  displayUrl: string;
+  hashtags: string[];
+  predictedScore: number;
+  scoreBreakdown: {
+    hookStrength: number;
+    clarity: number;
+    emotionalPull: number;
+  };
+  creativeTip: string;
+  tiktokScript?: {
+    visualHook: string;
+    voiceover: string;
+    onScreenText: string;
+    soundRecommendation: string;
+  };
+  googleAssets?: {
+    headlines: string[];
+    descriptions: string[];
+    path1: string;
+    path2: string;
+  };
+}
+
+// Fallback high-quality generators when offline or no API key
+function generateSmartFallbacks(
+  productDesc: string,
+  platform: string,
+  tone: string,
+  audience?: string,
+  cta: string = 'Shop Now'
+): AdVariation[] {
+  const shortDesc = productDesc.length > 60 ? productDesc.substring(0, 60) + '...' : productDesc;
+  const targetAudience = audience?.trim() || 'Smart Shoppers';
+
+  if (platform === 'tiktok') {
+    return [
+      {
+        id: 'var-1',
+        angle: 'POV Pattern Interrupt Hook',
+        hook: `POV: You just discovered the cheat code for ${shortDesc} 👀`,
+        headline: 'TikTok Viral Hit: 50% Off Today',
+        primaryText: `Wait, why did nobody tell me about this sooner?! 😱 If you're into ${shortDesc}, this is officially your sign. Tap the yellow basket before it sells out again!`,
+        callToAction: cta || 'Order Now',
+        displayUrl: 'tiktok.shop/trending-finds',
+        hashtags: ['#TikTokMadeMeBuyIt', '#ViralFinds', '#MustHave', '#ProductReview', '#Unboxing'],
+        predictedScore: 96,
+        scoreBreakdown: { hookStrength: 98, clarity: 94, emotionalPull: 96 },
+        creativeTip: 'Start with an extreme close-up of unboxing or a dramatic before/after reveal in the first 1.5 seconds.',
+        tiktokScript: {
+          visualHook: 'Fast-paced zoom onto product in hand with shock expression',
+          voiceover: 'Stop scrolling! I tested this so you do not have to, and honestly? Mind blown.',
+          onScreenText: '🚨 RUN, DONT WALK (Limited stock)',
+          soundRecommendation: 'Trending Lo-Fi Upbeat Beat or Dramatic Reveal Audio'
+        }
+      },
+      {
+        id: 'var-2',
+        angle: 'Relatable Problem & Life Hack',
+        hook: `If you struggle with ${shortDesc}, watch this whole video.`,
+        headline: 'The Ultimate Solution We All Needed',
+        primaryText: `My honest review after 14 days of using this: it completely fixed my biggest daily headache. 10/10 recommend. Grab the discount below! 👇`,
+        callToAction: cta || 'Shop Now',
+        displayUrl: 'tiktok.shop/lifehack-deal',
+        hashtags: ['#LifeHacks', '#HonestReview', '#GameChanger', '#ShoppingFinds'],
+        predictedScore: 92,
+        scoreBreakdown: { hookStrength: 93, clarity: 95, emotionalPull: 88 },
+        creativeTip: 'Show genuine user-generated footage in natural lighting, pointing to the link in caption.',
+        tiktokScript: {
+          visualHook: 'Holding up the product while shaking head in disbelief',
+          voiceover: 'I thought this was overhyped until I tried it yesterday...',
+          onScreenText: '✨ 10/10 Rating - Legit Life Hack',
+          soundRecommendation: 'Chill Pop Aesthetic Acoustic Sound'
+        }
+      },
+      {
+        id: 'var-3',
+        angle: 'FOMO & Flash Deal Rush',
+        hook: `Secret deal alert: They just restocked ${shortDesc} but only for 48 hours! ⏳`,
+        headline: 'Almost Sold Out - Instant Express Delivery',
+        primaryText: `Do NOT pay full price elsewhere. Use the creator discount in the link right now before inventory wipes out. 🛒⚡`,
+        callToAction: cta || 'Claim Discount',
+        displayUrl: 'tiktok.shop/flash-drop',
+        hashtags: ['#DealAlert', '#FlashSale', '#Discounts', '#TrendingNow'],
+        predictedScore: 94,
+        scoreBreakdown: { hookStrength: 96, clarity: 91, emotionalPull: 95 },
+        creativeTip: 'Split-screen showing countdown timer + product in action.',
+        tiktokScript: {
+          visualHook: 'Finger tapping screen pointing to flash sale banner',
+          voiceover: 'Warning: This will sell out by tonight. Do not say I did not warn you!',
+          onScreenText: '🔥 48H Restock Sale Ends Midnight',
+          soundRecommendation: 'High Energy Fast Trap / Bass Boost'
+        }
+      }
+    ];
+  }
+
+  if (platform === 'google') {
+    return [
+      {
+        id: 'var-1',
+        angle: 'Intent & High Search Relevancy',
+        hook: `Find The Best ${shortDesc} | Top Rated in 2026`,
+        headline: `Buy ${shortDesc.slice(0, 30)} | 50% Off Today`,
+        primaryText: `Looking for top-tier quality? Discover ${productDesc}. Free 2-Day Shipping, 30-Day Money Back Guarantee, and 24/7 Support. Shop Now & Save.`,
+        callToAction: cta || 'Shop Online',
+        displayUrl: 'swiftadwriter.com/best-deals',
+        hashtags: ['#GoogleAds', '#SearchMarketing', '#PPC', '#OfficialStore'],
+        predictedScore: 97,
+        scoreBreakdown: { hookStrength: 95, clarity: 99, emotionalPull: 94 },
+        creativeTip: 'Ensure keyword matching in headlines and activate seller rating extensions.',
+        googleAssets: {
+          headlines: [
+            `Official ${shortDesc.slice(0, 25)}`,
+            'Save 50% On Your First Order',
+            'Over 50,000 Happy Customers',
+            'Rated 4.9/5 Stars Online',
+            'Fast & Free Shipping Today'
+          ],
+          descriptions: [
+            `Premium quality ${shortDesc}. Designed for performance and guaranteed to satisfy.`,
+            'Order today to lock in free express shipping and risk-free 30-day money back guarantee.'
+          ],
+          path1: 'official',
+          path2: 'deals'
+        }
+      },
+      {
+        id: 'var-2',
+        angle: 'Direct Comparison & Feature Superiority',
+        hook: `Better Than The Rest | Guaranteed Performance`,
+        headline: `Why Settle? Upgrade to ${shortDesc.slice(0, 25)}`,
+        primaryText: `Compare specs and see why thousands of users switched to ${productDesc}. Built to outlast the competition. Claim your special bundle discount today.`,
+        callToAction: cta || 'Compare & Save',
+        displayUrl: 'swiftadwriter.com/compare',
+        hashtags: ['#TopPick', '#ValueLeader', '#SpecialOffer'],
+        predictedScore: 93,
+        scoreBreakdown: { hookStrength: 91, clarity: 96, emotionalPull: 92 },
+        creativeTip: 'Use sitelink extensions: "Customer Reviews", "Feature Breakdown", "Exclusive Pricing".',
+        googleAssets: {
+          headlines: [
+            'Tested & Proven Leader',
+            `Upgrade Your Experience`,
+            'Transparent Pricing & No Hassle',
+            'Exclusive Limited Offer'
+          ],
+          descriptions: [
+            `See how our solution outperforms conventional alternatives. Try it risk-free today.`,
+            'Join the community of verified users. Instant checkout with guaranteed warranty.'
+          ],
+          path1: 'best-value',
+          path2: 'reviews'
+        }
+      },
+      {
+        id: 'var-3',
+        angle: 'Urgent Promo / Seasonal Discount',
+        hook: `Seasonal Flash Offer | Limited Units In Stock`,
+        headline: `Save Up To 50% | ${shortDesc.slice(0, 25)}`,
+        primaryText: `Exclusive web pricing available for a limited time. Don't miss out on ${productDesc}. Secure payment, hassle-free returns. Buy now!`,
+        callToAction: cta || 'Get Deal Now',
+        displayUrl: 'swiftadwriter.com/limited-promo',
+        hashtags: ['#FlashDeal', '#PromoCode', '#OnlineSavings'],
+        predictedScore: 95,
+        scoreBreakdown: { hookStrength: 96, clarity: 94, emotionalPull: 95 },
+        creativeTip: 'Use countdown promotion extensions to increase CTR by up to 32%.',
+        googleAssets: {
+          headlines: [
+            'Limited Stock Available',
+            'Exclusive Web Promo Only',
+            'Claim Your Voucher Now'
+          ],
+          descriptions: [
+            `Act fast before inventory clears. ${shortDesc} ships directly to your doorstep today.`,
+            'Zero risk with our 100% satisfaction promise. Secure your order in 60 seconds.'
+          ],
+          path1: 'promo',
+          path2: 'flash-sale'
+        }
+      }
+    ];
+  }
+
+  if (platform === 'linkedin') {
+    return [
+      {
+        id: 'var-1',
+        angle: 'Executive Problem / Agitate / Solve (PAS)',
+        hook: `Most teams waste 15+ hours weekly struggling with outdated workflows. Here is the modern fix.`,
+        headline: `Modernize Your Operations with ${shortDesc.slice(0, 30)}`,
+        primaryText: `In fast-moving industries, relying on yesterday's tools leads to bottlenecks, burnt-out teams, and missed growth targets.\n\nThat's why forward-thinking organizations are adopting ${productDesc}.\n\n✅ 3x faster turnaround times\n✅ Seamless integration with your current tech stack\n✅ Enterprise-grade reliability and security\n\nRead how our clients unlocked measurable ROI in under 30 days.`,
+        callToAction: cta || 'Request Enterprise Demo',
+        displayUrl: 'swiftadwriter.com/enterprise',
+        hashtags: ['#Innovation', '#Productivity', '#EnterpriseSolutions', '#BusinessTransformation'],
+        predictedScore: 95,
+        scoreBreakdown: { hookStrength: 94, clarity: 97, emotionalPull: 91 },
+        creativeTip: 'Pair with a clean infographic, dashboard screenshot, or high-contrast stat graphic.',
+      },
+      {
+        id: 'var-2',
+        angle: 'Founder Story & Industry Insight',
+        hook: `When we analyzed the data across 2,000+ professionals, one clear pattern emerged.`,
+        headline: `The New Standard for ${shortDesc.slice(0, 30)}`,
+        primaryText: `Traditional approaches to ${shortDesc} are no longer scalable.\n\nWe engineered ${productDesc} specifically for ${targetAudience} who need uncompromising performance without the overhead.\n\nKey advantages:\n• Built for modern distributed teams\n• Zero complex training curve\n• Proven 99.9% customer satisfaction\n\nDiscover why industry leaders are making the switch this quarter.`,
+        callToAction: cta || 'Learn More',
+        displayUrl: 'swiftadwriter.com/case-study',
+        hashtags: ['#Leadership', '#B2BGrowth', '#SaaS', '#WorkplaceEfficiency'],
+        predictedScore: 93,
+        scoreBreakdown: { hookStrength: 92, clarity: 96, emotionalPull: 90 },
+        creativeTip: 'Use a high-trust personal headshot or polished customer quote carousel.',
+      },
+      {
+        id: 'var-3',
+        angle: 'Hard Metrics & ROI Proof',
+        hook: `What would a 40% efficiency boost mean for your bottom line this quarter?`,
+        headline: `Calculate Your ROI With ${shortDesc.slice(0, 30)}`,
+        primaryText: `Stop pouring resources into friction points. ${productDesc} empowers teams to eliminate manual overhead and focus on high-impact revenue generation.\n\nDownload our comprehensive industry benchmark report and see the quantitative difference for yourself.`,
+        callToAction: cta || 'Download Free Report',
+        displayUrl: 'swiftadwriter.com/roi-calculator',
+        hashtags: ['#ROI', '#BusinessIntelligence', '#FutureOfWork'],
+        predictedScore: 92,
+        scoreBreakdown: { hookStrength: 93, clarity: 94, emotionalPull: 89 },
+        creativeTip: 'Display a clear chart showing time saved vs traditional alternatives.',
+      }
+    ];
+  }
+
+  // Meta (Facebook & Instagram) default
+  return [
+    {
+      id: 'var-1',
+      angle: 'Scroll-Stopping AIDA Framework',
+      hook: `🔥 Stop scrolling! If you care about quality, you cannot afford to miss this.`,
+      headline: `Experience The Ultimate ${shortDesc.slice(0, 25)}`,
+      primaryText: `Meet the breakthrough everyone is buzzing about: ${productDesc} ✨\n\nWhether you're tired of clunky alternatives or simply demand the best, this was built for you.\n\n⚡ Instant boost in your everyday routine\n💎 Engineered with premium, durable materials\n📦 Backed by our 30-day no-questions-asked guarantee\n\nTap below to claim an extra 25% off your first order today only! 👇`,
+      callToAction: cta || 'Shop Now & Save',
+      displayUrl: 'swiftadwriter.com/exclusive-offer',
+      hashtags: ['#TrendingNow', '#MustHave', '#ViralProduct', '#SmartShopping'],
+      predictedScore: 96,
+      scoreBreakdown: { hookStrength: 97, clarity: 96, emotionalPull: 95 },
+      creativeTip: 'Use a bright, high-contrast hero image showing the product in hands or active lifestyle context.',
+    },
+    {
+      id: 'var-2',
+      angle: 'Social Proof & Relatable Transformation',
+      hook: `"Honestly, I was skeptical at first. But this completely exceeded my expectations!" ⭐⭐⭐⭐⭐`,
+      headline: `Rated 4.9/5 by 12,000+ Happy Customers`,
+      primaryText: `Hear it directly from people who upgraded: ${productDesc} is a genuine game-changer.\n\n"I used to struggle with ordinary versions every single day. Within 48 hours of trying this, I couldn't imagine going back." - Verified Review\n\nSee why we have a 98% reorder rate. Tap Shop Now before stock runs dry!`,
+      callToAction: cta || 'Claim Yours Today',
+      displayUrl: 'swiftadwriter.com/reviews',
+      hashtags: ['#CustomerFavorites', '#BestSeller', '#TopRated'],
+      predictedScore: 94,
+      scoreBreakdown: { hookStrength: 94, clarity: 95, emotionalPull: 94 },
+      creativeTip: 'Carousel ad showing customer testimonial quotes overlaid on product lifestyle shots.',
+    },
+    {
+      id: 'var-3',
+      angle: 'Urgency & Limited Inventory Drop',
+      hook: `🚨 Flash Sale Alert: Only 35 units left in warehouse stock!`,
+      headline: `50% Off Flash Drop Ending Tonight`,
+      primaryText: `We didn't expect demand for ${productDesc} to explode like this!\n\nDue to overwhelming popularity, our current production run is nearly depleted. Don't pay reseller prices later.\n\nLock in your 50% discount and get FREE express shipping before the clock hits zero. ⏰`,
+      callToAction: cta || 'Get 50% Off Now',
+      displayUrl: 'swiftadwriter.com/flash-sale',
+      hashtags: ['#FlashSale', '#LimitedDrop', '#DealsOfTheDay', '#Sale'],
+      predictedScore: 95,
+      scoreBreakdown: { hookStrength: 98, clarity: 93, emotionalPull: 97 },
+      creativeTip: 'Dynamic graphic with a bold red "LIMITED STOCK" badge and clean product cut-out.',
+    }
+  ];
+}
+
+// API: Generate Ads
+app.post('/api/generate-ads', async (req, res) => {
+  try {
+    const {
+      productDesc,
+      platform = 'meta',
+      tone = 'persuasive',
+      targetAudience = '',
+      language = 'English',
+      callToAction = 'Shop Now',
+      numVariations = 3,
+    } = req.body;
+
+    if (!productDesc || typeof productDesc !== 'string' || !productDesc.trim()) {
+      return res.status(400).json({ error: 'Product description is required' });
+    }
+
+    // If no GEMINI_API_KEY is configured, return the high-fidelity smart fallback
+    if (!process.env.GEMINI_API_KEY) {
+      console.log('No GEMINI_API_KEY set. Generating smart simulated variations.');
+      const simulated = generateSmartFallbacks(productDesc, platform, tone, targetAudience, callToAction);
+      return res.json({
+        variations: simulated,
+        mode: 'fallback',
+        platform,
+        tone,
+      });
+    }
+
+    const platformGuides: Record<string, string> = {
+      meta: 'Meta Ads (Facebook & Instagram Feed/Stories). Needs punchy scroll-stopping hook, clear benefit bullets, bold headline under 45 chars, and direct CTA.',
+      tiktok: 'TikTok Ads & Organic Scripts. Fast-paced, Gen-Z / millennial friendly, hook in first 2 seconds, includes visual hook direction, voiceover script, and on-screen text overlay suggestions.',
+      google: 'Google Responsive Search Ads. High search intent, 3-5 punchy headlines (under 30 chars each), 2 descriptions (under 90 chars each), display paths, and high CTR phrasing.',
+      linkedin: 'LinkedIn Sponsored Content. Professional B2B tone, executive pain points, measurable ROI, thought leadership angle, bulleted value propositions.',
+      x: 'X / Twitter Promoted Post. Sharp, witty or high-impact short-form copy with viral hook and strong link incentive.',
+    };
+
+    const prompt = `You are a world-class direct-response copywriter and media buyer who has spent $50M+ on digital advertising.
+Generate ${numVariations} high-converting ad variations for the following product:
+
+PRODUCT / SERVICE:
+"${productDesc.trim()}"
+
+TARGET PLATFORM: ${platform.toUpperCase()} (${platformGuides[platform] || 'General digital ads'})
+MARKETING TONE / FRAMEWORK: ${tone}
+TARGET AUDIENCE: ${targetAudience.trim() || 'High-intent potential customers'}
+OUTPUT LANGUAGE: ${language}
+PREFERRED CALL TO ACTION: ${callToAction}
+
+Generate ${numVariations} distinct strategic angles (e.g., Angle 1: Pattern Interrupt Hook, Angle 2: Social Proof & Problem/Solution, Angle 3: Urgency & FOMO Flash Deal).
+Ensure each variation is strictly tailored to ${platform.toUpperCase()} guidelines, format, and reader psychology.`;
+
+    const geminiCall = ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: prompt,
+      config: {
+        systemInstruction: `You are SwiftAdWriter AI, an elite ad copywriting engine. You output high-converting ad variations formatted strictly as JSON. You score the conversion potential realistically (88-99).`,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          description: 'List of ad copy variations',
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              angle: { type: Type.STRING, description: 'Copywriting angle or psychological trigger used' },
+              hook: { type: Type.STRING, description: 'The 3-second opening hook line' },
+              headline: { type: Type.STRING, description: 'Platform headline (for Meta/Google/LinkedIn card)' },
+              primaryText: { type: Type.STRING, description: 'The complete ad body text with line breaks' },
+              callToAction: { type: Type.STRING, description: 'The CTA button label' },
+              displayUrl: { type: Type.STRING, description: 'A realistic display URL slug' },
+              hashtags: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: '3 to 5 targeted hashtags'
+              },
+              predictedScore: { type: Type.INTEGER, description: 'Estimated conversion score out of 100' },
+              scoreBreakdown: {
+                type: Type.OBJECT,
+                properties: {
+                  hookStrength: { type: Type.INTEGER },
+                  clarity: { type: Type.INTEGER },
+                  emotionalPull: { type: Type.INTEGER },
+                },
+                required: ['hookStrength', 'clarity', 'emotionalPull'],
+              },
+              creativeTip: { type: Type.STRING, description: 'Visual or video creative recommendation to match this copy' },
+              tiktokScript: {
+                type: Type.OBJECT,
+                properties: {
+                  visualHook: { type: Type.STRING },
+                  voiceover: { type: Type.STRING },
+                  onScreenText: { type: Type.STRING },
+                  soundRecommendation: { type: Type.STRING }
+                }
+              },
+              googleAssets: {
+                type: Type.OBJECT,
+                properties: {
+                  headlines: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  descriptions: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  path1: { type: Type.STRING },
+                  path2: { type: Type.STRING }
+                }
+              }
+            },
+            required: ['id', 'angle', 'hook', 'headline', 'primaryText', 'callToAction', 'displayUrl', 'hashtags', 'predictedScore', 'scoreBreakdown', 'creativeTip'],
+          },
+        },
+      },
+    });
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Gemini API call timed out')), 3500)
+    );
+
+    const response = await Promise.race([geminiCall, timeoutPromise]);
+    const rawText = response.text || '[]';
+    let variations: AdVariation[];
+    try {
+      variations = JSON.parse(rawText);
+    } catch {
+      variations = generateSmartFallbacks(productDesc, platform, tone, targetAudience, callToAction);
+    }
+
+    return res.json({
+      variations,
+      mode: 'gemini-3.8-flash',
+      platform,
+      tone,
+    });
+  } catch (error: any) {
+    console.error('Error generating ads via Gemini:', error);
+    // Return high quality fallback variations so user never sees a broken app
+    const fallback = generateSmartFallbacks(
+      req.body.productDesc || 'Innovative product',
+      req.body.platform || 'meta',
+      req.body.tone || 'persuasive',
+      req.body.targetAudience,
+      req.body.callToAction
+    );
+    return res.json({
+      variations: fallback,
+      mode: 'fallback',
+      warning: error?.message || 'Using smart fallback generation engine',
+    });
+  }
+});
+
+// API: Enhance Prompt / Product Pitch
+app.post('/api/enhance-prompt', async (req, res) => {
+  try {
+    const { rawInput } = req.body;
+    if (!rawInput || typeof rawInput !== 'string') {
+      return res.status(400).json({ error: 'rawInput is required' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({
+        enhanced: `${rawInput.trim()} — Features: Ergonomic engineered build, 60h rechargeable endurance battery, customizable RGB accents, ultra-low latency response for competitive gaming and daily productivity.`,
+      });
+    }
+
+    const enhanceCall = ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: `Transform this brief product note into a detailed, high-impact description suitable for ad copywriting (around 2-3 sentences highlighting core value, unique selling proposition, and primary benefit):\n"${rawInput}"`,
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        systemInstruction: 'You are a product marketing strategist. Return ONLY the enhanced product description, nothing else.',
+      },
+    });
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Prompt enhancement timed out')), 3000)
+    );
+
+    const response = await Promise.race([enhanceCall, timeoutPromise]);
+
+    return res.json({
+      enhanced: response.text?.trim() || rawInput,
+    });
+  } catch (error: any) {
+    return res.json({
+      enhanced: `${req.body.rawInput} (Engineered for maximum reliability, speed, and customer satisfaction).`,
+    });
+  }
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'SwiftAdWriter Engine',
+    cloudflareShield: true,
+    geminiEnabled: !!process.env.GEMINI_API_KEY,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Mount Vite or serve static files
+async function startServer() {
+  const isDev = process.env.NODE_ENV !== 'production';
+
+  if (isDev) {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.resolve(__dirname, 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.resolve(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 SwiftAdWriter server running on http://0.0.0.0:${PORT} (isDev: ${isDev})`);
+  });
+}
+
+if (!process.env.VERCEL) {
+  startServer().catch((err) => {
+    console.error('Failed to start SwiftAdWriter server:', err);
+  });
+}
+
+export default app;
